@@ -17,7 +17,10 @@ import (
 	"time"
 )
 
-const version = "1.0.1"
+// version 是编译期可覆盖的版本号。必须是变量（不能是 const），这样 build.cmd 与
+// GitHub Actions 才能用 -ldflags "-X main.version=x.y.z" 把版本号写进二进制。
+// 不带 ldflags 直接 go build 时使用下面的默认值。
+var version = "1.0.1"
 
 //go:embed web/client.html
 var clientPage string

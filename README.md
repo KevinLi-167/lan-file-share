@@ -88,6 +88,10 @@ build.cmd
 也可以直接 `go build -trimpath -ldflags "-s -w" -o dist\LANFileShare.exe .`，
 或 `go install github.com/KevinLi-167/lan-file-share@latest` 装到 `GOPATH\bin`。
 
+**版本号不用手改源码**：`main.go` 里的 `version` 是变量，编译时由
+`-X main.version=x.y.z` 覆盖 —— `build.cmd` 顶部的 `VERSION=` 会注入它。
+不带 `-X` 直接 `go build` 时用的是源码里的默认值。
+
 ### 2. 启动
 
 双击 exe。程序会：
@@ -137,6 +141,31 @@ http://<你的局域网IP>:5421/api/probe/download/测试.mp4
 > 只有在真平板的浏览器 / WebView 上打开才有诊断意义。
 
 ---
+
+## 自动发布（GitHub Actions）
+
+`.github/workflows/release.yml` 负责自动出包，不需要本机装 Go 也能发版：
+
+- **打 tag 自动发布**：`git tag v1.0.2 && git push origin v1.0.2`
+  → 云端自动编译，把 exe 和 `SHA256SUMS.txt` 挂到该 tag 的 Release 上（Release 已存在则覆盖附件）。
+- **手动触发**：Actions 页选 `Release` → *Run workflow*。填了 tag 就走上面的发布流程；
+  留空则**只编译**并把 exe 作为 Actions 产物上传（保留 90 天），不动 Release。
+
+版本号取自 tag（去掉前缀 `v`），通过 `-ldflags -X main.version=` 写进 exe，与 `build.cmd` 一致。
+
+流程内容：`gofmt -l` 查格式 → `go vet` → `go build` → 算 SHA256 → 发布。
+构建参数刻意与 `build.cmd` 对齐（`CGO_ENABLED=0`、`-trimpath`、`-s -w`）。
+
+**关于「本地编的和 CI 编的是不是同一个文件」**：
+
+- 只要**同一 commit、同一 Go 版本、工作区干净**，理论上逐字节相同（Go 构建是确定性的）。
+- 但**默认不保证哈希相同**：Go 会把 git 信息（`vcs.revision`、`vcs.modified` 等）嵌进二进制，
+  而 CI 上 Go 版本也可能和本机不一样。所以两份 exe 的**行为完全一致、哈希通常不同**。
+- 想核对手头的 exe 是不是这份源码编的，用 `go version -m <exe>` 看内嵌信息，
+  或比对 Release 里的 `SHA256SUMS.txt`。
+
+> 首次使用若在发布步骤报权限错误，去 **Settings → Actions → General → Workflow permissions**
+> 选 **Read and write permissions**（workflow 里已声明 `permissions: contents: write`）。
 
 ## 界面
 

@@ -1,0 +1,122 @@
+# 打 v* 标签时自动编译 Windows exe，并挂到对应 tag 的 GitHub Release 上。
+# 也可以在 Actions 页面手动触发（填 tag 就发布，留空则只编译并上传 Actions 产物）。
+#
+# 构建参数刻意与 build.cmd 保持一致（CGO_ENABLED=0 / -trimpath / -s -w），
+# 版本号通过 -X main.version 从 tag 注入，不手改源码。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag，例如 v1.0.2；留空则只编译，不建 Release'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.24.4'
+  CGO_ENABLED: '0'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: 解析版本号
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:TAG
+          if ($tag) {
+            $ver = $tag -replace '^v', ''
+            "release=true" >> $env:GITHUB_OUTPUT
+          } else {
+            $src = Get-Content main.go -Raw
+            if ($src -notmatch 'var\s+version\s*=\s*"([^"]+)"') {
+              Write-Error 'main.go 里找不到 version 变量'
+              exit 1
+            }
+            $ver = $Matches[1]
+            "release=false" >> $env:GITHUB_OUTPUT
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "ver=$ver" >> $env:GITHUB_OUTPUT
+          Write-Host "版本号：$ver"
+
+      - name: gofmt 与 go vet
+        shell: pwsh
+        run: |
+          $bad = gofmt -l .
+          if ($bad) {
+            Write-Host '以下文件未格式化：'
+            Write-Host $bad
+            exit 1
+          }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 编译 exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $name = "LANFileShare_v${{ steps.version.outputs.ver }}.exe"
+          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.ver }}" -o "dist/$name" .
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: 生成 SHA256 校验和
+        shell: pwsh
+        run: |
+          $name = "LANFileShare_v${{ steps.version.outputs.ver }}.exe"
+          $hash = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: 上传 Actions 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANFileShare_v${{ steps.version.outputs.ver }}
+          path: |
+            dist/LANFileShare_v${{ steps.version.outputs.ver }}.exe
+            dist/SHA256SUMS.txt
+
+      - name: 发布或更新 Release
+        if: steps.version.outputs.release == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $ver = "${{ steps.version.outputs.ver }}"
+          $exe = "dist/LANFileShare_v$ver.exe"
+          gh release view $tag --json tagName 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag 已存在，覆盖上传附件"
+            gh release upload $tag $exe dist/SHA256SUMS.txt --clobber
+          } else {
+            Write-Host "创建 Release $tag"
+            gh release create $tag $exe "dist/SHA256SUMS.txt" --title "LANFileShare v$ver" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
