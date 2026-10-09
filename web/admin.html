@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>局域网文件共享 · 管理</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: #f2f4f7;
+  color: #1f2d3d;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: "Microsoft YaHei", "PingFang SC", Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 18px; }
+
+.card {
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+h1 { margin: 0 0 4px 0; font-size: 20px; }
+h2 { margin: 0 0 12px 0; font-size: 16px; }
+.sub { font-size: 13px; color: #909399; }
+.mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #606266; word-break: break-all; }
+
+.addr-line { margin-top: 12px; }
+.addr-line select, .addr-line input[type=text] {
+  font-size: 14px;
+  font-family: inherit;
+  padding: 7px 9px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+}
+#addrSelect { width: 380px; max-width: 100%; margin-right: 8px; }
+#bigUrl { width: 100%; margin-top: 8px; }
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid #b3d8ff;
+  background: #ecf5ff;
+  color: #2b6cb0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover { background: #d9ecff; }
+.btn.green { border-color: #b3e19d; background: #f0f9eb; color: #529b2e; }
+.btn.green:hover { background: #e1f3d8; }
+.btn.ghost { border-color: #dcdfe6; background: #fff; color: #606266; }
+.btn.ghost:hover { background: #f5f7fa; }
+.btn.danger { border-color: #fbc4c4; background: #fef0f0; color: #c45656; }
+.btn.danger:hover { background: #fde2e2; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.row { margin-bottom: 10px; }
+.row .btn { margin-right: 8px; }
+.row.last { margin-bottom: 0; }
+
+table.list { width: 100%; border-collapse: collapse; }
+table.list th, table.list td {
+  padding: 9px 8px;
+  border-bottom: 1px solid #ebeef5;
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+  word-break: break-all;
+}
+table.list th { font-size: 12px; font-weight: normal; color: #909399; border-bottom: 1px solid #dcdfe6; }
+table.list tr.gone td { color: #b8bfc9; }
+table.list td.ops { white-space: nowrap; width: 150px; text-align: right; }
+table.list td.ops .btn { margin-left: 4px; }
+.empty { text-align: center; color: #a8b0ba; padding: 24px 0; }
+
+.tag {
+  display: inline-block;
+  font-size: 12px;
+  border-radius: 3px;
+  padding: 1px 6px;
+  border: 1px solid #dcdfe6;
+  background: #f5f7fa;
+  color: #606266;
+}
+.tag.file { border-color: #b3d8ff; background: #ecf5ff; color: #2b6cb0; }
+.tag.text { border-color: #b3e19d; background: #f0f9eb; color: #529b2e; }
+.tag.gone { border-color: #fbc4c4; background: #fef0f0; color: #c45656; }
+.tag.client { border-color: #ffd596; background: #fdf6ec; color: #b88230; }
+
+textarea {
+  width: 100%;
+  min-height: 84px;
+  font-size: 14px;
+  font-family: inherit;
+  padding: 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+}
+.paths-input { width: 100%; min-height: 60px; font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  top: 22px;
+  transform: translateX(-50%);
+  background: #303133;
+  color: #fff;
+  font-size: 14px;
+  padding: 9px 18px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  max-width: 80%;
+}
+#toast.on { opacity: 1; }
+#toast.err { background: #c45656; }
+
+.grid2 { display: table; width: 100%; }
+.grid2 > div { display: table-cell; width: 50%; vertical-align: top; }
+.grid2 > div:first-child { padding-right: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1>局域网文件共享 · 管理端</h1>
+    <div class="sub" id="metaLine">正在读取服务信息…</div>
+    <div class="addr-line">
+      <select id="addrSelect"></select>
+      <button type="button" class="btn" id="btnCopyAddr">复制访问链接</button>
+      <input type="text" id="bigUrl" readonly="readonly">
+    </div>
+    <div class="sub" style="margin-top:8px">
+      把上面这个地址发给平板，或在平板浏览器里手动输入即可打开共享页。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>共享本机文件</h2>
+    <div class="row">
+      <button type="button" class="btn green" id="btnPick">选择文件…</button>
+      <button type="button" class="btn ghost" id="btnOpenUploadDir">打开上传保存目录</button>
+      <button type="button" class="btn ghost" id="btnOpenProbe">打开兼容性探测页</button>
+    </div>
+    <div class="row last">
+      <div class="sub" style="margin-bottom:6px">也可以直接粘贴本机文件完整路径，一行一个：</div>
+      <textarea id="pathInput" class="paths-input" placeholder="C:\Users\you\Desktop\报告.pdf"></textarea>
+      <div style="margin-top:8px">
+        <button type="button" class="btn" id="btnAddPaths">添加这些路径</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>共享一段文本</h2>
+    <textarea id="textInput" placeholder="输入要共享给平板的文本"></textarea>
+    <div style="margin-top:8px">
+      <button type="button" class="btn green" id="btnPublishText">发布文本</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>共享列表 <span class="sub" id="countLine"></span></h2>
+    <div style="margin-bottom:10px">
+      <button type="button" class="btn ghost" id="btnReload">刷新列表</button>
+    </div>
+    <div id="listBox"></div>
+  </div>
+
+  <div class="card">
+    <h2>运行信息</h2>
+    <div class="mono" id="envLine">—</div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  var TOKEN = '__FS_TOKEN__';
+  var state = { urls: [], items: [] };
+  var toastTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function formatSize(size) {
+    size = Number(size) || 0;
+    if (size < 1024) { return size + ' B'; }
+    if (size < 1048576) { return (size / 1024).toFixed(1) + ' KB'; }
+    if (size < 1073741824) { return (size / 1048576).toFixed(1) + ' MB'; }
+    return (size / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function toast(message, isError) {
+    var node = $('toast');
+    node.innerHTML = escapeHtml(message);
+    node.className = isError ? 'on err' : 'on';
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function () { node.className = ''; }, 2800);
+  }
+
+  function api(path, payload, callback) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', path, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('X-FS-Token', TOKEN);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      var ok = xhr.status >= 200 && xhr.status < 300;
+      var data = null;
+      if (xhr.responseText) {
+        try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+      }
+      if (!ok) {
+        toast(xhr.responseText || ('请求失败 ' + xhr.status), true);
+      }
+      callback(ok, data);
+    };
+    xhr.send(JSON.stringify(payload || {}));
+  }
+
+  function copyText(text) {
+    var ok = false;
+    var node = document.createElement('textarea');
+    node.value = text;
+    node.style.position = 'fixed';
+    node.style.left = '-9999px';
+    document.body.appendChild(node);
+    try {
+      node.select();
+      node.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(node);
+
+    if (ok) {
+      toast('已复制');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast('已复制');
+      }, function () {
+        window.prompt('请手动复制下面的链接：', text);
+      });
+      return;
+    }
+    window.prompt('请手动复制下面的链接：', text);
+  }
+
+  // ------------------------------------------------------------ 渲染
+
+  function renderMeta(info) {
+    $('metaLine').innerHTML = '主机名 <b>' + escapeHtml(info.hostname) + '</b>' +
+      '　版本 v' + escapeHtml(info.version) +
+      '　端口 ' + escapeHtml(info.port) +
+      '　单文件上限 ' + escapeHtml(info.maxUploadGB) + ' GB';
+
+    state.urls = info.urls || [];
+    var select = $('addrSelect');
+    select.innerHTML = '';
+    if (state.urls.length === 0) {
+      select.innerHTML = '<option value="">未检测到可用的局域网地址</option>';
+      $('bigUrl').value = '未检测到可用于局域网访问的网卡地址';
+    } else {
+      for (var i = 0; i < state.urls.length; i++) {
+        select.innerHTML += '<option value="' + escapeHtml(state.urls[i]) + '">' + escapeHtml(state.urls[i]) + '</option>';
+      }
+      $('bigUrl').value = state.urls[0];
+    }
+
+    $('envLine').innerHTML =
+      '程序目录：' + escapeHtml(info.exeDir) + '<br>' +
+      '上传保存：' + escapeHtml(info.uploadDir) + '<br>' +
+      '共享列表：' + escapeHtml(info.dataFile);
+  }
+
+  function renderItems(items) {
+    state.items = items || [];
+    $('countLine').innerHTML = '共 ' + state.items.length + ' 条';
+
+    var html = '<table class="list">';
+    html += '<tr><th style="width:64px">类型</th><th>名称</th><th style="width:80px">大小</th><th>本机路径</th><th class="ops">操作</th></tr>';
+
+    if (state.items.length === 0) {
+      html += '<tr><td colspan="5" class="empty">还没有共享任何内容</td></tr>';
+    } else {
+      for (var i = 0; i < state.items.length; i++) {
+        var item = state.items[i];
+        var gone = item.exists === false;
+        html += '<tr' + (gone ? ' class="gone"' : '') + '>';
+        html += '<td><span class="tag ' + (item.kind === 'text' ? 'text' : 'file') + '">' +
+          (item.kind === 'text' ? '文本' : '文件') + '</span></td>';
+        html += '<td>' + escapeHtml(item.name) +
+          (item.source === 'client' ? ' <span class="tag client">平板上传</span>' : '') +
+          (gone ? ' <span class="tag gone">已失效</span>' : '') + '</td>';
+        html += '<td>' + (item.kind === 'text'
+          ? escapeHtml(String(item.text || '').length) + ' 字'
+          : formatSize(item.size)) + '</td>';
+        html += '<td class="mono">' + (item.path ? escapeHtml(item.path) : '—') + '</td>';
+        html += '<td class="ops">';
+        if (item.path) {
+          if (gone) {
+            html += '<button type="button" class="btn small ghost" disabled="disabled">定位</button>';
+          } else {
+            html += '<button type="button" class="btn small ghost" onclick="ADMIN.reveal(\'' + item.id + '\')">定位</button>';
+          }
+        }
+        html += '<button type="button" class="btn small danger" onclick="ADMIN.remove(\'' + item.id + '\')">移除</button>';
+        html += '</td>';
+        html += '</tr>';
+      }
+    }
+    html += '</table>';
+    $('listBox').innerHTML = html;
+  }
+
+  // ------------------------------------------------------------ 行为
+
+  function reload() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/admin/info?_=' + new Date().getTime(), true);
+    xhr.setRequestHeader('X-FS-Token', TOKEN);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        toast(xhr.responseText || ('读取服务信息失败 ' + xhr.status), true);
+        return;
+      }
+      var info = null;
+      try { info = JSON.parse(xhr.responseText); } catch (e) { info = null; }
+      if (!info) { return; }
+      renderMeta(info);
+      renderItems(info.items);
+    };
+    xhr.send(null);
+  }
+
+  function pickFiles() {
+    var button = $('btnPick');
+    button.setAttribute('disabled', 'disabled');
+    button.innerHTML = '等待选择…';
+    api('/api/admin/pick', {}, function (ok, data) {
+      button.removeAttribute('disabled');
+      button.innerHTML = '选择文件…';
+      if (!ok || !data) { return; }
+      if (data.picked === 0) {
+        toast('没有选择任何文件');
+        return;
+      }
+      renderItems(data.items);
+      toast('新增 ' + data.added + ' 个，跳过 ' + data.skipped + ' 个（重复或不存在）');
+    });
+  }
+
+  function addPaths() {
+    var raw = $('pathInput').value || '';
+    var lines = raw.split(/\r?\n/);
+    var paths = [];
+    for (var i = 0; i < lines.length; i++) {
+      var value = lines[i].replace(/^\s+|\s+$/g, '');
+      if (value) { paths.push(value); }
+    }
+    if (paths.length === 0) {
+      toast('请先粘贴至少一个文件路径', true);
+      return;
+    }
+    api('/api/admin/files', { paths: paths }, function (ok, data) {
+      if (!ok || !data) { return; }
+      $('pathInput').value = '';
+      renderItems(data.items);
+      toast('新增 ' + data.added + ' 个，跳过 ' + data.skipped + ' 个（重复或不存在）');
+    });
+  }
+
+  function publishText() {
+    var text = $('textInput').value;
+    if (!text || !text.replace(/\s/g, '')) {
+      toast('请先输入文本', true);
+      return;
+    }
+    api('/api/admin/text', { text: text }, function (ok, data) {
+      if (!ok || !data) { return; }
+      $('textInput').value = '';
+      renderItems(data.items);
+      toast('文本已发布');
+    });
+  }
+
+  function removeItem(id) {
+    var item = null;
+    for (var i = 0; i < state.items.length; i++) {
+      if (state.items[i].id === id) { item = state.items[i]; }
+    }
+    if (!item) { return; }
+    if (!window.confirm('确定取消共享「' + item.name + '」吗？\n\n只会从共享列表移除，不会删除磁盘上的原文件。')) {
+      return;
+    }
+    api('/api/admin/remove', { id: id }, function (ok, data) {
+      if (!ok || !data) { return; }
+      renderItems(data.items);
+      toast('已移除');
+    });
+  }
+
+  function revealItem(id) {
+    api('/api/admin/reveal', { id: id }, function (ok) {
+      if (ok) { toast('已在资源管理器中定位'); }
+    });
+  }
+
+  function openUploadDir() {
+    api('/api/admin/open-upload-dir', {}, function (ok) {
+      if (ok) { toast('已打开上传保存目录'); }
+    });
+  }
+
+  function bind() {
+    $('btnPick').onclick = pickFiles;
+    $('btnAddPaths').onclick = addPaths;
+    $('btnPublishText').onclick = publishText;
+    $('btnReload').onclick = reload;
+    $('btnOpenUploadDir').onclick = openUploadDir;
+    $('btnOpenProbe').onclick = function () {
+      window.open('/probe.html', '_blank');
+    };
+    $('btnCopyAddr').onclick = function () {
+      copyText($('bigUrl').value);
+    };
+    $('addrSelect').onchange = function () {
+      $('bigUrl').value = $('addrSelect').value;
+    };
+  }
+
+  window.ADMIN = { remove: removeItem, reveal: revealItem };
+
+  bind();
+  reload();
+  setInterval(reload, 5000);
+})();
+</script>
+</body>
+</html>

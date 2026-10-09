@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>兼容性探测</title>
+<!--
+  这个页面只做一件事：告诉你在当前这台平板浏览器上，哪些能力可用、哪些不可用。
+  全篇 ES5，不用任何外部资源，保证在老设备上也能打开。
+-->
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 12px;
+  background: #f2f4f7; color: #1f2d3d;
+  font-family: "Microsoft YaHei", "Droid Sans Fallback", Helvetica, Arial, sans-serif;
+  font-size: 15px; line-height: 1.6;
+}
+.card { background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0 0 8px 0; }
+h2 { font-size: 15px; margin: 0 0 8px 0; }
+table { width: 100%; border-collapse: collapse; }
+td, th { padding: 7px 6px; border-bottom: 1px solid #ebeef5; font-size: 14px; text-align: left; vertical-align: top; }
+th { color: #909399; font-size: 12px; font-weight: normal; }
+.yes { color: #529b2e; }
+.no { color: #c45656; }
+.mono { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; color: #606266; }
+.btn {
+  display: inline-block; padding: 9px 14px; font-size: 15px; font-family: inherit;
+  border: 1px solid #b3d8ff; background: #ecf5ff; color: #2b6cb0;
+  border-radius: 4px; cursor: pointer; margin: 0 8px 8px 0; text-decoration: none;
+}
+label.pick { display: block; border: 1px dashed #b3d8ff; background: #f7fbff; border-radius: 6px; padding: 18px 10px; text-align: center; }
+label.pick input { display: none; }
+#result { margin-top: 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>兼容性探测</h1>
+  <div class="sub mono" id="ua"></div>
+  <div class="sub mono" id="env"></div>
+</div>
+
+<div class="card">
+  <h2>关键能力</h2>
+  <table id="caps"><tr><th>能力</th><th style="width:76px">结果</th></tr></table>
+</div>
+
+<div class="card">
+  <h2>上传测试（验证中文文件名）</h2>
+  <label class="pick">
+    <input type="file" id="probeFile">
+    <strong>点这里随便选一个文件</strong>
+  </label>
+  <div id="result">选完会自动上传，只读取文件名，不会真的保存。</div>
+</div>
+
+<div class="card">
+  <h2>下载测试（验证文件名与扩展名）</h2>
+  <a class="btn" href="/api/probe/download/%E4%B8%AD%E6%96%87%E5%90%8D%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.txt">下载一个中文名 .txt 测试文件</a>
+  <div class="sub" style="margin-top:6px">下载后看文件名是不是「中文名测试文件.txt」。<br>
+  如果变成下划线，是 ASCII 回退名生效了；如果是乱码，说明文件名编码需要调整。</div>
+</div>
+
+<div class="card">
+  <h2>扩展名测试（验证 apk 会不会变成 bin）</h2>
+  <a class="btn" href="/api/probe/download/%E5%AE%89%E8%A3%85%E5%8C%85%E6%B5%8B%E8%AF%95.apk">下载一个 .apk 测试文件</a>
+  <div class="sub" style="margin-top:6px">下载后看扩展名是不是 <b>.apk</b>。<br>
+  如果变成 <b>.bin</b>，说明这台浏览器在拿 MIME 猜扩展名，需要继续调服务端的 Content-Type。</div>
+</div>
+
+<script>
+(function () {
+  function $(id) { return document.getElementById(id); }
+
+  function row(name, ok, note) {
+    var cls = ok ? 'yes' : 'no';
+    var text = ok ? '支持' : '不支持';
+    return '<tr><td>' + name + (note ? '<div class="mono">' + note + '</div>' : '') +
+      '</td><td class="' + cls + '">' + text + '</td></tr>';
+  }
+
+  function probe() {
+    var html = '';
+    var xhr = new XMLHttpRequest();
+
+    html += row('XMLHttpRequest', typeof XMLHttpRequest !== 'undefined');
+    html += row('XHR 上传进度事件', typeof xhr.upload !== 'undefined', '没有也不影响上传，只是看不到进度');
+    html += row('FormData', typeof FormData !== 'undefined', '不支持则走裸 body 上传兜底');
+    html += row('JSON', typeof JSON !== 'undefined' && typeof JSON.parse === 'function');
+    html += row('addEventListener', !!window.addEventListener);
+    html += row('querySelector', !!document.querySelector);
+    html += row('Element.classList', !!(document.body && document.body.classList));
+    html += row('FileReader', typeof FileReader !== 'undefined');
+    html += row('Blob', typeof Blob !== 'undefined');
+    html += row('EventSource (SSE)', typeof EventSource !== 'undefined', '本项目已改用轮询，不需要它');
+    html += row('WebSocket', typeof WebSocket !== 'undefined');
+
+    var storageOk = false;
+    try { window.localStorage.setItem('__p', '1'); storageOk = window.localStorage.getItem('__p') === '1'; window.localStorage.removeItem('__p'); } catch (e) { storageOk = false; }
+    html += row('localStorage', storageOk);
+
+    var el = document.createElement('div');
+    var style = el.style;
+    html += row('CSS border-radius', ('borderRadius' in style) || ('webkitBorderRadius' in style));
+    html += row('CSS transition', ('transition' in style) || ('webkitTransition' in style));
+    html += row('CSS flexbox', ('flex' in style) || ('webkitFlex' in style), '本项目布局不依赖 flex');
+    html += row('CSS grid', 'grid' in style, '本项目布局不依赖 grid');
+    html += row('CSS 自定义属性 var()', !!(window.CSS && window.CSS.supports && window.CSS.supports('--x', '0')), '本项目 CSS 不使用变量');
+
+    $('caps').innerHTML = '<tr><th>能力</th><th style="width:76px">结果</th></tr>' + html;
+  }
+
+  function showEnv() {
+    $('ua').innerHTML = 'UA: ' + escapeHtml(navigator.userAgent);
+    var parts = [];
+    parts.push('屏幕: ' + screen.width + '×' + screen.height);
+    parts.push('视口: ' + window.innerWidth + '×' + window.innerHeight);
+    parts.push('像素比: ' + (window.devicePixelRatio || 1));
+    parts.push('平台: ' + (navigator.platform || '未知'));
+    parts.push('语言: ' + (navigator.language || navigator.userLanguage || '未知'));
+    $('env').innerHTML = escapeHtml(parts.join('　|　'));
+  }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function upload(file) {
+    if (!file) { return; }
+    $('result').innerHTML = '正在上传…';
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/probe/upload', true);
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        $('result').innerHTML = '上传失败，服务端返回 ' + xhr.status + '<div class="mono">' + escapeHtml(xhr.responseText || '') + '</div>';
+        return;
+      }
+      var data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+      if (!data) {
+        $('result').innerHTML = '服务端返回了无法解析的内容';
+        return;
+      }
+      $('result').innerHTML =
+        '浏览器报告的文件名：<span class="mono">' + escapeHtml(file.name) + '</span><br>' +
+        '服务端收到的原始名：<span class="mono">' + escapeHtml(data.rawName) + '</span><br>' +
+        '服务端整理后的名字：<span class="mono">' + escapeHtml(data.name) + '</span><br>' +
+        '编码判断：<b>' + escapeHtml(data.charset) + '</b><br>' +
+        '字节数：' + data.size;
+    };
+
+    try {
+      if (typeof FormData !== 'undefined') {
+        var form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
+      } else {
+        xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.send(file);
+      }
+    } catch (e) {
+      $('result').innerHTML = '这个浏览器不支持网页上传文件：' + escapeHtml(e.message || e);
+    }
+  }
+
+  function bind() {
+    var input = $('probeFile');
+    var handler = function () {
+      if (input.files && input.files[0]) {
+        upload(input.files[0]);
+      }
+    };
+    if (input.addEventListener) { input.addEventListener('change', handler, false); }
+    else if (input.attachEvent) { input.attachEvent('onchange', handler); }
+  }
+
+  function boot() {
+    showEnv();
+    probe();
+    bind();
+  }
+
+  if (document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', boot, false);
+  } else {
+    window.attachEvent('onload', boot);
+  }
+})();
+</script>
+</body>
+</html>

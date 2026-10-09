@@ -1,0 +1,15 @@
+# 编译产物
+dist/
+
+# 运行时数据（上传的文件与共享列表）
+uploads/
+data/
+.runtest/
+.verify/
+
+# 老安卓兼容性检查的依赖
+node_modules/
+package-lock.json
+
+*.log
+*.exe.bak

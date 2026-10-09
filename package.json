@@ -1,0 +1,17 @@
+{
+  "name": "lanfileshare-tools",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "局域网文件共享工具的辅助脚本（仅老安卓兼容性检查用，不影响 Go 主程序）",
+  "scripts": {
+    "check": "node scripts/check-es5.mjs && node scripts/check-render.mjs",
+    "check:es5": "node scripts/check-es5.mjs",
+    "check:render": "node scripts/check-render.mjs"
+  },
+  "devDependencies": {
+    "acorn": "^8.15.0",
+    "jsdom": "^28.0.0"
+  }
+}

@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>局域网文件共享</title>
+<!--
+  这个页面必须能在 Android 4.3 及更老的老 WebKit 内核上跑起来。
+  因此全篇遵守以下纪律，改动时不要破坏：
+    1. 只用 ES5：var / function / for 循环，不用 const、let、箭头函数、模板字符串
+    2. 不用 fetch / Promise / async，网络一律走 XMLHttpRequest
+    3. 不用 EventSource(SSE)，改成 setInterval 轮询
+    4. 不用 <dialog>，弹窗用 div + display 切换
+    5. CSS 不用变量、grid、flex gap，布局以 table 和 inline-block 为主
+    6. 不用 Blob / URL.createObjectURL，下载直接靠 <a href> + 服务端 Content-Disposition
+-->
+<style>
+* { -webkit-box-sizing: border-box; box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: #f2f4f7;
+  color: #1f2d3d;
+  font-size: 16px;
+  line-height: 1.5;
+  font-family: "Microsoft YaHei", "PingFang SC", "Droid Sans Fallback", Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+.wrap { padding: 10px; }
+
+.card {
+  background: #ffffff;
+  border: 1px solid #dcdfe6;
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.host { font-size: 18px; font-weight: bold; color: #1f2d3d; word-wrap: break-word; }
+.addr-row { margin-top: 8px; }
+.addr {
+  display: block;
+  font-size: 13px;
+  color: #6b7785;
+  word-wrap: break-word;
+  background: #f7f9fc;
+  border: 1px solid #e4e8ee;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 9px 14px;
+  font-size: 15px;
+  line-height: 1.2;
+  border: 1px solid #b3d8ff;
+  background: #ecf5ff;
+  color: #2b6cb0;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:active { background: #d9ecff; }
+.btn.small { padding: 7px 12px; font-size: 14px; }
+.btn.green { border-color: #b3e19d; background: #f0f9eb; color: #529b2e; }
+.btn.green:active { background: #e1f3d8; }
+.btn.ghost { border-color: #dcdfe6; background: #ffffff; color: #606266; }
+.btn[disabled] { opacity: 0.45; }
+
+.toolbar { margin-bottom: 10px; }
+.toolbar .btn { margin: 0 8px 8px 0; }
+
+.head-row { margin-bottom: 10px; }
+.head-row .title { font-size: 17px; font-weight: bold; display: inline-block; vertical-align: middle; }
+.status { font-size: 13px; color: #909399; margin-left: 8px; }
+.status.ok { color: #529b2e; }
+.status.err { color: #c45656; }
+.status.busy { color: #b88230; }
+
+table.list { width: 100%; border-collapse: collapse; }
+table.list th, table.list td {
+  padding: 10px 6px;
+  border-bottom: 1px solid #ebeef5;
+  text-align: left;
+  vertical-align: middle;
+  font-size: 15px;
+  word-wrap: break-word;
+  word-break: break-all;
+}
+table.list th { font-size: 13px; font-weight: normal; color: #909399; border-bottom: 1px solid #dcdfe6; }
+table.list tr.gone td { color: #b8bfc9; text-decoration: line-through; }
+th.c-size, td.c-size { width: 84px; white-space: nowrap; }
+th.c-op, td.c-op { width: 86px; white-space: nowrap; text-align: right; }
+.empty { text-align: center; color: #a8b0ba; padding: 26px 0 !important; }
+.tag {
+  display: inline-block;
+  font-size: 12px;
+  color: #529b2e;
+  border: 1px solid #b3e19d;
+  background: #f0f9eb;
+  -webkit-border-radius: 3px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-right: 5px;
+  text-decoration: none;
+}
+.dead { font-size: 13px; color: #c0c4cc; }
+
+.mask {
+  display: none;
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background-color: #000000;
+  background-color: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  overflow: auto;
+}
+.mask.on { display: block; }
+.mask-table { display: table; width: 100%; height: 100%; }
+.mask-cell { display: table-cell; vertical-align: middle; text-align: center; padding: 14px; }
+.dlg {
+  display: inline-block;
+  text-align: left;
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  -webkit-border-radius: 8px;
+  border-radius: 8px;
+  padding: 14px;
+}
+.dlg h3 { margin: 0 0 10px 0; font-size: 17px; }
+.dlg p { margin: 0 0 10px 0; font-size: 14px; color: #606266; }
+.dlg textarea {
+  width: 100%;
+  height: 140px;
+  font-size: 15px;
+  font-family: inherit;
+  padding: 8px;
+  border: 1px solid #dcdfe6;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+}
+.dlg-foot { margin-top: 12px; }
+.dlg-foot .btn { margin-right: 8px; }
+.pick {
+  display: block;
+  border: 1px dashed #b3d8ff;
+  background: #f7fbff;
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  padding: 24px 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.pick strong { display: block; font-size: 16px; color: #2b6cb0; margin-bottom: 6px; }
+.pick small { font-size: 13px; color: #909399; }
+.pick input { display: none; }
+
+.notice {
+  display: none;
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+  color: #c45656;
+  -webkit-border-radius: 6px;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+.notice.on { display: block; }
+.notice p { margin: 4px 0 10px 0; font-size: 14px; color: #a34c4c; }
+
+#toast {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  margin-left: -110px;
+  width: 220px;
+  text-align: center;
+  background-color: #000000;
+  background-color: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 14px;
+  padding: 10px;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  z-index: 200;
+}
+#toast.on { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="host" id="hostName">局域网文件共享</div>
+    <div class="addr-row">
+      <span class="addr" id="addrText"></span>
+      <button type="button" class="btn small ghost" id="btnCopyAddr">复制访问链接</button>
+    </div>
+  </div>
+
+  <div class="notice" id="stoppedNotice">
+    <strong>分享已停止</strong>
+    <p>对方电脑上的共享已经关闭，重新开启后再刷新本页即可。</p>
+    <button type="button" class="btn small" id="btnRefreshTop">刷新页面</button>
+  </div>
+
+  <div class="card">
+    <div class="head-row">
+      <span class="title">共享列表</span>
+      <span class="status" id="status">连接中…</span>
+    </div>
+    <div class="toolbar">
+      <button type="button" class="btn green" id="btnText">共享文本</button>
+      <button type="button" class="btn" id="btnFile">上传文件</button>
+      <button type="button" class="btn ghost" id="btnRefresh">刷新</button>
+    </div>
+    <div id="listBox"></div>
+  </div>
+
+</div>
+
+<div class="mask" id="textMask">
+  <div class="mask-table"><div class="mask-cell"><div class="dlg">
+    <h3>共享一段文本</h3>
+    <p>文本会出现在所有人的共享列表里，别人可以复制。</p>
+    <textarea id="textInput" placeholder="在这里输入要共享的文本"></textarea>
+    <div class="dlg-foot">
+      <button type="button" class="btn green" id="btnTextSubmit">确认共享</button>
+      <button type="button" class="btn ghost" id="btnTextCancel">取消</button>
+    </div>
+  </div></div></div>
+</div>
+
+<div class="mask" id="fileMask">
+  <div class="mask-table"><div class="mask-cell"><div class="dlg">
+    <h3>上传文件到电脑</h3>
+    <p>文件会保存到对方电脑的共享目录里。选完即自动上传，可重复选择多个文件。</p>
+    <label class="pick">
+      <input type="file" id="fileInput">
+      <strong>点击选择文件</strong>
+      <small>选完自动开始上传</small>
+    </label>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost" id="btnFileClose">关闭</button>
+    </div>
+  </div></div></div>
+</div>
+
+<div class="mask" id="copyMask">
+  <div class="mask-table"><div class="mask-cell"><div class="dlg">
+    <h3>请手动复制</h3>
+    <p>当前浏览器不支持自动复制，请在下面的框里长按全选后复制。</p>
+    <textarea id="copyArea" readonly="readonly"></textarea>
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="btnCopyClose">关闭</button>
+    </div>
+  </div></div></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  var POLL_INTERVAL = 3000;
+  var itemsById = {};
+  var listKey = '';
+  var failCount = 0;
+  var pollTimer = null;
+  var toastTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatSize(size) {
+    size = Number(size) || 0;
+    if (size < 1024) { return size + ' B'; }
+    if (size < 1048576) { return (size / 1024).toFixed(1) + ' KB'; }
+    if (size < 1073741824) { return (size / 1048576).toFixed(1) + ' MB'; }
+    return (size / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function textLength(text) {
+    return String(text === null || text === undefined ? '' : text).length;
+  }
+
+  function setStatus(text, kind) {
+    var node = $('status');
+    node.className = 'status' + (kind ? ' ' + kind : '');
+    node.innerHTML = escapeHtml(text);
+  }
+
+  function toast(message) {
+    var node = $('toast');
+    node.innerHTML = escapeHtml(message);
+    node.className = 'on';
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function () { node.className = ''; }, 2600);
+  }
+
+  function showMask(id) { $(id).className = 'mask on'; }
+  function hideMask(id) { $(id).className = 'mask'; }
+
+  function on(node, event, handler) {
+    if (node.addEventListener) {
+      node.addEventListener(event, handler, false);
+    } else if (node.attachEvent) {
+      node.attachEvent('on' + event, handler);
+    }
+  }
+
+  // ------------------------------------------------------------ 网络请求
+
+  function request(method, url, body, contentType, callback) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    if (contentType) { xhr.setRequestHeader('Content-Type', contentType); }
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      var ok = xhr.status >= 200 && xhr.status < 300;
+      var data = null;
+      if (xhr.responseText) {
+        try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+      }
+      callback(ok, xhr.status, data, xhr.responseText);
+    };
+    xhr.send(body || null);
+    return xhr;
+  }
+
+  // ------------------------------------------------------------ 列表
+
+  function currentUrl() {
+    var url = window.location.href;
+    var cut = url.indexOf('#');
+    if (cut >= 0) { url = url.substring(0, cut); }
+    return url;
+  }
+
+  function loadItems(force) {
+    request('GET', '/api/items?_=' + (new Date().getTime()), null, null, function (ok, status, data) {
+      if (!ok) {
+        failCount++;
+        if (failCount >= 2) {
+          setStatus('连接中断', 'err');
+          $('stoppedNotice').className = 'notice on';
+        } else {
+          setStatus('正在重试…', 'err');
+        }
+        return;
+      }
+
+      failCount = 0;
+      $('stoppedNotice').className = 'notice';
+      setStatus('已连接', 'ok');
+
+      if (data && data.hostname && !$('hostName').getAttribute('data-locked')) {
+        $('hostName').innerHTML = escapeHtml(data.hostname);
+        $('hostName').setAttribute('data-locked', '1');
+        if (!document.title || document.title === '局域网文件共享') {
+          document.title = data.hostname + ' 的文件共享';
+        }
+      }
+      render(data && data.items ? data.items : [], force);
+    });
+  }
+
+  function render(items, force) {
+    var key = '';
+    var i;
+    for (i = 0; i < items.length; i++) {
+      key += items[i].id + (items[i].exists ? '1' : '0') + '|';
+    }
+    if (!force && key === listKey) { return; }
+    listKey = key;
+
+    itemsById = {};
+    for (i = 0; i < items.length; i++) {
+      itemsById[items[i].id] = items[i];
+    }
+
+    var html = '<table class="list">';
+    html += '<tr><th>名称</th><th class="c-size">大小</th><th class="c-op">操作</th></tr>';
+
+    if (items.length === 0) {
+      html += '<tr><td colspan="3" class="empty">还没有共享内容</td></tr>';
+    } else {
+      for (i = 0; i < items.length; i++) {
+        html += rowHtml(items[i]);
+      }
+    }
+    html += '</table>';
+    $('listBox').innerHTML = html;
+  }
+
+  function rowHtml(item) {
+    var html = '<tr' + (item.exists ? '' : ' class="gone"') + '>';
+
+    if (item.kind === 'text') {
+      html += '<td><span class="tag">文本</span>' + escapeHtml(item.name) + '</td>';
+      html += '<td class="c-size">' + textLength(item.text) + ' 字</td>';
+      html += '<td class="c-op">';
+      html += '<button type="button" class="btn small green" onclick="FS.copyText(\'' + item.id + '\')">复制</button>';
+      html += '</td>';
+      return html + '</tr>';
+    }
+
+    html += '<td>' + escapeHtml(item.name) + '</td>';
+    html += '<td class="c-size">' + formatSize(item.size) + '</td>';
+    html += '<td class="c-op">';
+    if (item.exists) {
+      // 末尾拼上真实文件名（含扩展名）是有意为之：部分安卓内置浏览器不认
+      // Content-Disposition，会退回去用 URL 末段当文件名，URL 里没扩展名就存成 .bin。
+      html += '<a class="btn small" href="/api/download/' + encodeURIComponent(item.id) +
+        '/' + encodeURIComponent(item.name) + '">下载</a>';
+    } else {
+      html += '<span class="dead">文件已失效</span>';
+    }
+    html += '</td>';
+    return html + '</tr>';
+  }
+
+  // ------------------------------------------------------------ 复制
+
+  function legacyCopy(text) {
+    var node = document.createElement('textarea');
+    node.value = text;
+    node.setAttribute('readonly', 'readonly');
+    node.style.position = 'absolute';
+    node.style.left = '-9999px';
+    node.style.top = '0';
+    document.body.appendChild(node);
+
+    var ok = false;
+    try {
+      node.select();
+      node.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(node);
+    return ok;
+  }
+
+  function copyWithFallback(text, successMessage) {
+    if (legacyCopy(text)) {
+      toast(successMessage || '已复制');
+      return;
+    }
+    $('copyArea').value = text;
+    showMask('copyMask');
+    setTimeout(function () {
+      try {
+        $('copyArea').focus();
+        $('copyArea').select();
+      } catch (e) { }
+    }, 120);
+  }
+
+  function copyText(id) {
+    var item = itemsById[id];
+    if (!item) { return; }
+    if (!item.text) {
+      toast('这条文本内容为空');
+      return;
+    }
+    copyWithFallback(item.text, '已复制文本');
+  }
+
+  // ------------------------------------------------------------ 上传
+
+  function resetFileInput() {
+    try { $('fileInput').value = ''; } catch (e) { }
+  }
+
+  function doUpload() {
+    var input = $('fileInput');
+    var file = input.files && input.files[0] ? input.files[0] : null;
+    if (!file) { return; }
+
+    setStatus('正在上传 ' + file.name + ' …', 'busy');
+    $('btnText').setAttribute('disabled', 'disabled');
+    $('btnFile').setAttribute('disabled', 'disabled');
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload', true);
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+
+      $('btnText').removeAttribute('disabled');
+      $('btnFile').removeAttribute('disabled');
+      resetFileInput();
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        toast('上传成功：' + file.name);
+        setStatus('已连接', 'ok');
+        loadItems(true);
+        return;
+      }
+
+      var message = xhr.responseText || ('上传失败，服务端返回 ' + xhr.status);
+      setStatus('上传失败', 'err');
+      toast(message.length > 60 ? message.substring(0, 60) : message);
+    };
+
+    try {
+      if (typeof FormData !== 'undefined') {
+        var form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
+      } else {
+        // 极端老浏览器没有 FormData，退回「裸 body + 文件名放请求头」
+        xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.send(file);
+      }
+    } catch (e) {
+      $('btnText').removeAttribute('disabled');
+      $('btnFile').removeAttribute('disabled');
+      resetFileInput();
+      setStatus('上传失败', 'err');
+      toast('这个浏览器不支持网页上传文件');
+    }
+  }
+
+  // ------------------------------------------------------------ 交互绑定
+
+  function publishText() {
+    var text = $('textInput').value;
+    if (!text || !text.replace(/\s/g, '')) {
+      toast('请先输入要共享的文本');
+      return;
+    }
+
+    setStatus('正在提交文本…', 'busy');
+    request('POST', '/api/text', 'text=' + encodeURIComponent(text),
+      'application/x-www-form-urlencoded', function (ok, status, data, raw) {
+        if (ok) {
+          $('textInput').value = '';
+          hideMask('textMask');
+          toast('文本已共享');
+          setStatus('已连接', 'ok');
+          loadItems(true);
+          return;
+        }
+        setStatus('提交失败', 'err');
+        toast(raw || '提交失败');
+      });
+  }
+
+  function bindEvents() {
+    on($('btnText'), 'click', function () { showMask('textMask'); });
+    on($('btnTextCancel'), 'click', function () { hideMask('textMask'); });
+    on($('btnTextSubmit'), 'click', publishText);
+
+    on($('btnFile'), 'click', function () {
+      showMask('fileMask');
+      resetFileInput();
+    });
+    on($('btnFileClose'), 'click', function () { hideMask('fileMask'); });
+    on($('fileInput'), 'change', doUpload);
+
+    on($('btnRefresh'), 'click', function () { loadItems(true); });
+    on($('btnRefreshTop'), 'click', function () { loadItems(true); });
+
+    on($('btnCopyAddr'), 'click', function () {
+      copyWithFallback(currentUrl(), '链接已复制');
+    });
+    on($('btnCopyClose'), 'click', function () { hideMask('copyMask'); });
+
+    // 点遮罩空白处关闭弹窗
+    var masks = ['textMask', 'fileMask', 'copyMask'];
+    for (var i = 0; i < masks.length; i++) {
+      (function (id) {
+        on($(id), 'click', function (event) {
+          var target = event.target || event.srcElement;
+          if (target && target.className && target.className.indexOf('mask') === 0) {
+            hideMask(id);
+          }
+        });
+      })(masks[i]);
+    }
+  }
+
+  // ------------------------------------------------------------ 启动
+
+  function boot() {
+    $('addrText').innerHTML = escapeHtml(currentUrl());
+    bindEvents();
+    loadItems(true);
+
+    if (pollTimer) { clearInterval(pollTimer); }
+    pollTimer = setInterval(function () { loadItems(false); }, POLL_INTERVAL);
+  }
+
+  window.FS = { copyText: copyText };
+
+  if (document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', boot, false);
+  } else {
+    window.attachEvent('onload', boot);
+  }
+})();
+</script>
+</body>
+</html>
