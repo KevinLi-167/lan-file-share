@@ -152,6 +152,11 @@ http://<你的局域网IP>:5421/api/probe/download/测试.mp4
   留空则**只编译**并把 exe 作为 Actions 产物上传（保留 90 天），不动 Release。
 
 版本号取自 tag（去掉前缀 `v`），通过 `-ldflags -X main.version=` 写进 exe，与 `build.cmd` 一致。
+手动触发时如果填了 tag，检出的是**那个 tag 的提交**（不是默认分支），版本内容才对得上。
+
+> 一个坑：push tag 触发的 workflow 取自**被推的那个 tag 里的文件**。
+> 如果 tag 指向的提交里还没有 `.github/workflows/release.yml`（比如给历史提交补打 tag），
+> 就不会触发 —— 这种情况改用手动触发并填上 tag。
 
 流程内容：`gofmt -l` 查格式 → `go vet` → `go build` → 算 SHA256 → 发布。
 构建参数刻意与 `build.cmd` 对齐（`CGO_ENABLED=0`、`-trimpath`、`-s -w`）。

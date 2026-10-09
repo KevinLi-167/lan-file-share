@@ -3,6 +3,10 @@
 #
 # 构建参数刻意与 build.cmd 保持一致（CGO_ENABLED=0 / -trimpath / -s -w），
 # 版本号通过 -X main.version 从 tag 注入，不手改源码。
+#
+# 注意：push tag 触发的 workflow 取自「被推的那个 tag 里的文件」。
+# 如果 tag 指向的提交里还没有这个文件（例如给历史提交补打 tag），不会触发，
+# 这种情况请用手动触发（Actions 页 → Release → Run workflow，填上 tag）。
 name: Release
 
 on:
@@ -36,6 +40,9 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
+          # 手动触发且填了 tag 时，必须检出那个 tag 的提交，
+          # 否则会拿默认分支的代码去发这个 tag 的版本。
+          ref: ${{ env.TAG != '' && env.TAG || github.ref }}
           fetch-depth: 0
 
       - name: 安装 Go
